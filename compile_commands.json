@@ -1,0 +1,62 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-c",
+      "-g",
+      "-Wall",
+      "-I",
+      "libraries/findargs",
+      "-g",
+      "-Wall",
+      "-I",
+      "libraries/utilscrypt",
+      "-o",
+      "./build/otpcrypt",
+      "main.c"
+    ],
+    "directory": "/home/iruburu/Documentos/mini_opt_cripter",
+    "file": "/home/iruburu/Documentos/mini_opt_cripter/main.c",
+    "output": "/home/iruburu/Documentos/mini_opt_cripter/build/otpcrypt"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-c",
+      "-g",
+      "-Wall",
+      "-I",
+      "libraries/findargs",
+      "-g",
+      "-Wall",
+      "-I",
+      "libraries/utilscrypt",
+      "-o",
+      "./build/otpcrypt",
+      "libraries/findargs/findargs.c"
+    ],
+    "directory": "/home/iruburu/Documentos/mini_opt_cripter",
+    "file": "/home/iruburu/Documentos/mini_opt_cripter/libraries/findargs/findargs.c",
+    "output": "/home/iruburu/Documentos/mini_opt_cripter/build/otpcrypt"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-c",
+      "-g",
+      "-Wall",
+      "-I",
+      "libraries/findargs",
+      "-g",
+      "-Wall",
+      "-I",
+      "libraries/utilscrypt",
+      "-o",
+      "./build/otpcrypt",
+      "libraries/utilscrypt/utilscrypt.c"
+    ],
+    "directory": "/home/iruburu/Documentos/mini_opt_cripter",
+    "file": "/home/iruburu/Documentos/mini_opt_cripter/libraries/utilscrypt/utilscrypt.c",
+    "output": "/home/iruburu/Documentos/mini_opt_cripter/build/otpcrypt"
+  }
+]
