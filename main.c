@@ -23,7 +23,7 @@ int main(int argc, char *argv[]) {
 
   int idxInFile,
       idxHelpOpt, // Flag para o help
-      statusCode; // Status da exe
+      statusCode; // Status da ex
 
   statusCode = 0;
   if ((idxHelpOpt = findArgBoolean("-h", &args)) == 1) {

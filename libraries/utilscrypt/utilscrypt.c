@@ -288,86 +288,111 @@ int streamCrypter(const char *input, const char *size_key_opt,
   return 0;
 }
 
+// Faz a cifragem de bloco
 int blockDecrypter(const char *input, const char *input_key,
                    const char *output) {
-  FILE *fptr;
-  FILE *save_fptr;
-  FILE *key_fptr;
+  FILE *encrypted_file;
+  FILE *decrypted_file;
+  FILE *key_file;
 
-  fptr = fopen(input, "rb");
-  if (fptr == NULL) {
+  // Validação de arquivos
+  encrypted_file = fopen(input, "rb");
+  if (encrypted_file == NULL) {
     printError("nao foi possivel abrir o arquivo", input);
     return -1;
   }
 
-  save_fptr = fopen(output, "wb");
-  if (save_fptr == NULL) {
+  decrypted_file = fopen(output, "wb");
+  if (decrypted_file == NULL) {
     printError("nao foi possivel criar arquivo cifrado", output);
-    fclose(fptr);
+    fclose(encrypted_file);
     return -1;
   }
 
-  key_fptr = fopen(input_key, "rb");
-  if (key_fptr == NULL) {
+  key_file = fopen(input_key, "rb");
+  if (key_file == NULL) {
     printError("nao foi possivel criar arquivo de chave", input_key);
-    fclose(fptr);
-    fclose(save_fptr);
+    fclose(encrypted_file);
+    fclose(decrypted_file);
     return -1;
   }
 
-  unsigned char current_buff[BLOCK_SIZE];
-  unsigned char next_buff[BLOCK_SIZE];
-  unsigned char key[BLOCK_SIZE];
+  // Variaveis usados na decifragem
+  unsigned char current_buff[BLOCK_SIZE]; // Bloco atual
+  unsigned char next_buff[BLOCK_SIZE];    // Proximo Bloco
+  unsigned char key[BLOCK_SIZE];          // Chave
 
-  size_t current_bytes_r = 0;
-  size_t next_bytes_r = 0;
-  size_t key_bytes_r = 0;
-  size_t writeen = 0;
+  size_t current_bytes_r = 0; // Bytes do bloco atual lido
+  size_t next_bytes_r = 0;    // Bytes do proximo bloco lido
+  size_t key_bytes_r = 0;     // Bytes da chave lido
+  size_t writeen = 0;         // Bytes escritos
 
-  current_bytes_r = fread(current_buff, 1, BLOCK_SIZE, fptr);
+  // Carrega o primeiro bloco para 'current_block'
+  current_bytes_r = fread(current_buff, 1, BLOCK_SIZE, encrypted_file);
   if (current_bytes_r == 0) {
-    printf("Erro na leitura do cifrado\n");
+    printError("nao foi possivel carregar arquivo cifrado", input);
     return -1;
   }
 
-  key_bytes_r = fread(key, 1, BLOCK_SIZE, key_fptr);
+  // Carrega a chave para 'key'
+  key_bytes_r = fread(key, 1, BLOCK_SIZE, key_file);
   if (key_bytes_r == 0) {
-    printf("erro na key");
+    printError("nao foi possivel carregar a chave", input_key);
     return -1;
   }
 
-  while ((next_bytes_r = fread(next_buff, 1, BLOCK_SIZE, fptr)) > 0) {
+  // Loop principal
+  // Loop para processar blocos inteiro de 16 bytes
+  // Carrega sempre o buff para 'next_buff'
+  // No final do loop, 'next_buff' é clonado para 'current_buff'
+  while ((next_bytes_r = fread(next_buff, 1, BLOCK_SIZE, encrypted_file)) > 0) {
+
+    // Faz decifragem com XOR bit a bit no bloco 'current_block'
     for (size_t i = 0; i < current_bytes_r; ++i) {
       current_buff[i] ^= key[i];
     }
 
-    writeen = fwrite(current_buff, 1, BLOCK_SIZE, save_fptr);
+    // Salva bloco decifrado no arquivo especificado 'decrypted_file'
+    // Caso quantidade de bytes lidos for diferente de esctitos, retorna um erro
+    writeen = fwrite(current_buff, 1, BLOCK_SIZE, decrypted_file);
     if (writeen != current_bytes_r) {
       printError("nao foi possivel gravar o arquivo decifrado", output);
+      return -1;
     }
 
     memcpy(current_buff, next_buff, BLOCK_SIZE);
     current_bytes_r = next_bytes_r;
   }
 
+  // Nesse ponto o ultimo bloco nao tem 16 bytes valido pois pode ter bytes de
+  // preenchimento, com isso deve ser pego o ultimo byte para saber o tamanho
+  // real do bloco, e deve ser processado separadamente
+
+  // Remove a camada XOR aplicada durante a cifragem
   for (size_t i = 0; i < current_bytes_r; ++i) {
     current_buff[i] ^= key[i];
   }
 
   unsigned char padding_val = current_buff[BLOCK_SIZE - 1];
- 
+
+  // Faz a verificação para saber se o ultimo bloco é valido
   if (padding_val > 0 && padding_val <= BLOCK_SIZE) {
+    // Pega o tamanho real do bloco
     size_t actual_data_size = BLOCK_SIZE - padding_val;
 
+    // verifica o tamanho, se for valido grava a quantidade correta
     if (actual_data_size > 0) {
-      fwrite(current_buff, 1, actual_data_size, save_fptr);
+      fwrite(current_buff, 1, actual_data_size, decrypted_file);
     }
   } else {
-    printf("Arquivo fudido\n");
+    // avisa o erro e encerra com erro
+    printError("arquivo corrompido ou chave incorreta", input);
+    return -1;
   }
 
   return 0;
 }
+
 int blockCypher(const char *input, const char *output_key, const char *output) {
   FILE *fptr;
   FILE *save_fptr;

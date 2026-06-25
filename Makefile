@@ -1,13 +1,24 @@
 CC = gcc
-CFLAGS = -g -Wall -I libraries/findargs 
-CUTILSCRYPT = -g -Wall -I libraries/utilscrypt
-FINDARGS = libraries/findargs/findargs.c
-UTILSCRYPT = libraries/utilscrypt/utilscrypt.c
+CFLAGS = -Wall \
+				 -I libraries/findargs \
+				 -I libraries/utilscrypt
 
-all: otpcrypt
+SRC = main.c \
+				 libraries/findargs/findargs.c \
+				 libraries/utilscrypt/utilscrypt.c
 
-otpcrypt: main.c
-	$(CC) $(CFLAGS) $(CUTILSCRYPT) main.c $(FINDARGS) $(UTILSCRYPT) -o ./build/otpcrypt
+SRC_BUILD = build
+TARGET = $(SRC_BUILD)/otpcrypt
+
+
+all: $(TARGET)
+
+$(TARGET): $(SRC)
+				 mkdir -p build
+				 $(CC) $(CFLAGS) $(SRC) -o $(TARGET)
 
 clean:
-	rm -f otpcrypt
+	rm -f $(TARGET)
+
+cleanAll:
+	rm -f $(SRC_BUILD)/*
