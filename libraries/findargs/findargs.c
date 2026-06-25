@@ -142,6 +142,7 @@ int tryGetArgValue(const char *flag, FindArgs *args) {
   int i;
 
   for (i = 0; i < args->arg_count; ++i) {
+
     if (strcmp(args->arg_vetors[i], flag) == 0) {
 
       // Verifica se existe valor apos a flag

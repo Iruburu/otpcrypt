@@ -2,12 +2,9 @@
 #include "utilscrypt.h"
 #include <stddef.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 int main(int argc, char *argv[]) {
-  srand(time(NULL));
 
   FindArgs args = {0};
 
@@ -54,9 +51,16 @@ int main(int argc, char *argv[]) {
       streamDecrypter(argv[idxInFile], idxKeyFile, idxOutFile);
     }
 
+  } else if (strcmp(mode, "block") == 0) {
+    if ((idxInFile = tryGetArgValue("-c", &args)) > 0)
+      blockCypher(argv[idxInFile], idxKeyFile, idxOutFile);
+    else if ((idxInFile = tryGetArgValue("-d", &args)) > 0) {
+      blockDecrypter(argv[idxInFile], idxKeyFile, idxOutFile);
+    }
   } else {
     fprintf(stderr, "Modo invalido.\n");
   }
+
 
   if (statusCode < 0) {
     return 1;

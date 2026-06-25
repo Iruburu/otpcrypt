@@ -1,9 +1,10 @@
 #include "utilscrypt.h"
 #include "findargs.h"
+#include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 void printError(const char *msg, const char *file) {
   fprintf(stderr, "Erro: %s '%s'\n", msg, file);
@@ -215,7 +216,7 @@ int streamDecrypter(const char *input, const char *input_key,
 
     writeen1 = fwrite(buff, 1, n1, out_fptr);
     if (writeen1 != n1) {
-      printError("nao foi possivel gravar o arquivo criptografado", output);
+      printError("nao foi possivel gravar o arquivo decifrado", output);
     }
   }
 
@@ -275,6 +276,170 @@ int streamCrypter(const char *input, const char *size_key_opt,
 
     writeen1 = fwrite(buff, 1, n1, save_fptr);
     if (writeen1 != n1) {
+      printError("nao foi possivel gravar o arquivo criptografado", output);
+    }
+  }
+
+  writeen2 = fwrite(key, 1, size_key, save_key_fptr);
+  if (writeen2 != size_key) {
+    printError("nao foi possivel gravar o arquivo de chave", output_key);
+  }
+
+  return 0;
+}
+
+int blockDecrypter(const char *input, const char *input_key,
+                   const char *output) {
+  FILE *fptr;
+  FILE *save_fptr;
+  FILE *key_fptr;
+
+  fptr = fopen(input, "rb");
+  if (fptr == NULL) {
+    printError("nao foi possivel abrir o arquivo", input);
+    return -1;
+  }
+
+  save_fptr = fopen(output, "wb");
+  if (save_fptr == NULL) {
+    printError("nao foi possivel criar arquivo cifrado", output);
+    fclose(fptr);
+    return -1;
+  }
+
+  key_fptr = fopen(input_key, "rb");
+  if (key_fptr == NULL) {
+    printError("nao foi possivel criar arquivo de chave", input_key);
+    fclose(fptr);
+    fclose(save_fptr);
+    return -1;
+  }
+
+  unsigned char current_buff[BLOCK_SIZE];
+  unsigned char next_buff[BLOCK_SIZE];
+  unsigned char key[BLOCK_SIZE];
+
+  size_t current_bytes_r = 0;
+  size_t next_bytes_r = 0;
+  size_t key_bytes_r = 0;
+  size_t writeen = 0;
+
+  current_bytes_r = fread(current_buff, 1, BLOCK_SIZE, fptr);
+  if (current_bytes_r == 0) {
+    printf("Erro na leitura do cifrado\n");
+    return -1;
+  }
+
+  key_bytes_r = fread(key, 1, BLOCK_SIZE, key_fptr);
+  if (key_bytes_r == 0) {
+    printf("erro na key");
+    return -1;
+  }
+
+  while ((next_bytes_r = fread(next_buff, 1, BLOCK_SIZE, fptr)) > 0) {
+    for (size_t i = 0; i < current_bytes_r; ++i) {
+      current_buff[i] ^= key[i];
+    }
+
+    writeen = fwrite(current_buff, 1, BLOCK_SIZE, save_fptr);
+    if (writeen != current_bytes_r) {
+      printError("nao foi possivel gravar o arquivo decifrado", output);
+    }
+
+    memcpy(current_buff, next_buff, BLOCK_SIZE);
+    current_bytes_r = next_bytes_r;
+  }
+
+  for (size_t i = 0; i < current_bytes_r; ++i) {
+    current_buff[i] ^= key[i];
+  }
+
+  unsigned char padding_val = current_buff[BLOCK_SIZE - 1];
+ 
+  if (padding_val > 0 && padding_val <= BLOCK_SIZE) {
+    size_t actual_data_size = BLOCK_SIZE - padding_val;
+
+    if (actual_data_size > 0) {
+      fwrite(current_buff, 1, actual_data_size, save_fptr);
+    }
+  } else {
+    printf("Arquivo fudido\n");
+  }
+
+  return 0;
+}
+int blockCypher(const char *input, const char *output_key, const char *output) {
+  FILE *fptr;
+  FILE *save_fptr;
+  FILE *save_key_fptr;
+
+  fptr = fopen(input, "rb");
+  if (fptr == NULL) {
+    printError("nao foi possivel abrir o arquivo", input);
+    return -1;
+  }
+
+  save_fptr = fopen(output, "wb");
+  if (save_fptr == NULL) {
+    printError("nao foi possivel criar arquivo cifrado", output);
+    fclose(fptr);
+    return -1;
+  }
+
+  save_key_fptr = fopen(output_key, "wb");
+  if (save_key_fptr == NULL) {
+    printError("nao foi possivel criar arquivo de chave", output_key);
+    fclose(fptr);
+    fclose(save_fptr);
+    return -1;
+  }
+
+  size_t size_key = BLOCK_SIZE;
+
+  unsigned char buff[size_key];
+  unsigned char key[size_key];
+  size_t r_bytes, writeen1, writeen2;
+
+  createKey(key, size_key);
+
+  while ((r_bytes = fread(buff, 1, size_key, fptr)) == BLOCK_SIZE) {
+
+    for (size_t i = 0; i < r_bytes; ++i) {
+      buff[i] ^= key[i];
+    }
+
+    writeen1 = fwrite(buff, 1, BLOCK_SIZE, save_fptr);
+    if (writeen1 != r_bytes) {
+      printError("nao foi possivel gravar o arquivo criptografado", output);
+    }
+  }
+
+  if (r_bytes > 0) {
+    uint8_t padding_val = BLOCK_SIZE - r_bytes;
+
+    for (size_t i = r_bytes; i < BLOCK_SIZE; ++i) {
+      buff[i] = padding_val;
+    }
+
+    for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+      buff[i] ^= key[i];
+    }
+
+    writeen1 = fwrite(buff, 1, BLOCK_SIZE, save_fptr);
+    if (writeen1 != BLOCK_SIZE) {
+      printError("nao foi possivel gravar o arquivo criptografado", output);
+    }
+  } else {
+    for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+      buff[i] = BLOCK_SIZE;
+    }
+
+    for (size_t i = 0; i < r_bytes; ++i) {
+      buff[i] ^= key[i];
+    }
+
+    writeen1 = fwrite(buff, 1, BLOCK_SIZE, save_fptr);
+    if (writeen1 != BLOCK_SIZE) {
       printError("nao foi possivel gravar o arquivo criptografado", output);
     }
   }
