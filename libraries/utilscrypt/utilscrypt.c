@@ -288,14 +288,14 @@ int streamCrypter(const char *input, const char *size_key_opt,
   return 0;
 }
 
-// Faz a cifragem de bloco
+// Faz a decifragem de bloco utilizando o modo CBC (Cipher Block Chaining)
 int blockDecrypter(const char *input, const char *input_key,
                    const char *output) {
   FILE *encrypted_file;
   FILE *decrypted_file;
   FILE *key_file;
 
-  // Validação de arquivos
+  // Validacao de arquivos de entrada, chave e saida
   encrypted_file = fopen(input, "rb");
   if (encrypted_file == NULL) {
     printError("nao foi possivel abrir o arquivo", input);
@@ -317,87 +317,184 @@ int blockDecrypter(const char *input, const char *input_key,
     return -1;
   }
 
-  // Variaveis usados na decifragem
-  unsigned char current_buff[BLOCK_SIZE]; // Bloco atual
-  unsigned char next_buff[BLOCK_SIZE];    // Proximo Bloco
-  unsigned char key[BLOCK_SIZE];          // Chave
+  // Formulas matematicas de referencia para o CBC:
+  // P1 = (C1 XOR K) XOR IV
+  // P2 = (C2 XOR K) XOR C1
+  // P3 = (C3 XOR K) XOR C2
 
+  // Variaveis usadas na decifragem
+  unsigned char IV[BLOCK_SIZE];
+  unsigned char
+      current_buff[BLOCK_SIZE]; // Armazena o bloco atual em processamento
+  unsigned char
+      next_buff[BLOCK_SIZE];     // Armazena o proximo bloco lido do arquivo
+  unsigned char key[BLOCK_SIZE]; // Armazena a chave simetrica (K)
+
+  size_t IV_bytes_r = 0;
   size_t current_bytes_r = 0; // Bytes do bloco atual lido
   size_t next_bytes_r = 0;    // Bytes do proximo bloco lido
   size_t key_bytes_r = 0;     // Bytes da chave lido
   size_t writeen = 0;         // Bytes escritos
 
-  // Carrega o primeiro bloco para 'current_block'
+  // 1. Carrega o Vetor de Inicializacao (IV)
+  IV_bytes_r = fread(IV, 1, BLOCK_SIZE, encrypted_file);
+  if (IV_bytes_r == 0) {
+    printError("nao foi possivel carregar IV", input);
+    fclose(encrypted_file);
+    fclose(decrypted_file);
+    fclose(key_file);
+    return -1;
+  }
+
+  // 2. Carrega o primeirissimo bloco cifrado (C1) para o buffer atual
   current_bytes_r = fread(current_buff, 1, BLOCK_SIZE, encrypted_file);
   if (current_bytes_r == 0) {
     printError("nao foi possivel carregar arquivo cifrado", input);
+    fclose(encrypted_file);
+    fclose(decrypted_file);
+    fclose(key_file);
     return -1;
   }
 
-  // Carrega a chave para 'key'
+  // Variaveis para armazenar o historico de blocos cifrados puros
+  unsigned char previous_buff[BLOCK_SIZE];
+  unsigned char copy_current_buff[BLOCK_SIZE];
+
+  // Salva C1 puro no historico antes das alteracoes matematicas
+  memcpy(previous_buff, current_buff, BLOCK_SIZE);
+
+  // 3. Carrega a chave simetrica (K)
   key_bytes_r = fread(key, 1, BLOCK_SIZE, key_file);
   if (key_bytes_r == 0) {
     printError("nao foi possivel carregar a chave", input_key);
+    fclose(encrypted_file);
+    fclose(decrypted_file);
+    fclose(key_file);
     return -1;
   }
 
-  // Loop principal
-  // Loop para processar blocos inteiro de 16 bytes
-  // Carrega sempre o buff para 'next_buff'
-  // No final do loop, 'next_buff' é clonado para 'current_buff'
-  while ((next_bytes_r = fread(next_buff, 1, BLOCK_SIZE, encrypted_file)) > 0) {
-
-    // Faz decifragem com XOR bit a bit no bloco 'current_block'
-    for (size_t i = 0; i < current_bytes_r; ++i) {
-      current_buff[i] ^= key[i];
-    }
-
-    // Salva bloco decifrado no arquivo especificado 'decrypted_file'
-    // Caso quantidade de bytes lidos for diferente de esctitos, retorna um erro
-    writeen = fwrite(current_buff, 1, BLOCK_SIZE, decrypted_file);
-    if (writeen != current_bytes_r) {
-      printError("nao foi possivel gravar o arquivo decifrado", output);
-      return -1;
-    }
-
-    memcpy(current_buff, next_buff, BLOCK_SIZE);
-    current_bytes_r = next_bytes_r;
-  }
-
-  // Nesse ponto o ultimo bloco nao tem 16 bytes valido pois pode ter bytes de
-  // preenchimento, com isso deve ser pego o ultimo byte para saber o tamanho
-  // real do bloco, e deve ser processado separadamente
-
-  // Remove a camada XOR aplicada durante a cifragem
+  // Inicio da decifragem de P1: Remove a camada da chave -> (C1 XOR K)
   for (size_t i = 0; i < current_bytes_r; ++i) {
     current_buff[i] ^= key[i];
   }
 
-  unsigned char padding_val = current_buff[BLOCK_SIZE - 1];
+  // Finaliza decifragem de P1: Aplica XOR com o IV -> ((C1 XOR K) XOR IV)
+  for (size_t i = 0; i < IV_bytes_r; ++i) {
+    current_buff[i] ^= IV[i];
+  }
 
-  // Faz a verificação para saber se o ultimo bloco é valido
-  if (padding_val > 0 && padding_val <= BLOCK_SIZE) {
-    // Pega o tamanho real do bloco
-    size_t actual_data_size = BLOCK_SIZE - padding_val;
-
-    // verifica o tamanho, se for valido grava a quantidade correta
-    if (actual_data_size > 0) {
-      fwrite(current_buff, 1, actual_data_size, decrypted_file);
-    }
-  } else {
-    // avisa o erro e encerra com erro
-    printError("arquivo corrompido ou chave incorreta", input);
+  // Grava o primeiro bloco decifrado (P1) no arquivo de texto limpo
+  writeen = fwrite(current_buff, 1, current_bytes_r, decrypted_file);
+  if (writeen != current_bytes_r) {
+    printError("nao foi possivel gravar o arquivo decifrado", output);
+    fclose(encrypted_file);
+    fclose(decrypted_file);
+    fclose(key_file);
     return -1;
   }
+
+  // Carrega adiantado o segundo bloco cifrado (C2) para iniciar a estrutura do
+  // loop
+  current_bytes_r = fread(current_buff, 1, BLOCK_SIZE, encrypted_file);
+
+  // LOOP PRINCIPAL: Processa blocos intermediarios ate encontrar o bloco final
+  while ((next_bytes_r = fread(next_buff, 1, BLOCK_SIZE, encrypted_file)) ==
+         BLOCK_SIZE) {
+
+    // Guarda uma copia de seguranca do bloco cifrado atual antes de modifica-lo
+    memcpy(copy_current_buff, current_buff, BLOCK_SIZE);
+
+    // Inicio da decifragem do bloco intermediario: Remove a chave -> (C_atual
+    // XOR K)
+    for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+      current_buff[i] ^= key[i];
+    }
+
+    // Finaliza decifragem do bloco: Aplica XOR com o bloco cifrado anterior ->
+    // ((C_atual XOR K) XOR C_anterior)
+    for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+      current_buff[i] ^= previous_buff[i];
+    }
+
+    // Escreve o texto claro resultante (P) no arquivo de saida
+    writeen = fwrite(current_buff, 1, current_bytes_r, decrypted_file);
+    if (writeen != next_bytes_r) {
+      printError("nao foi possivel gravar o arquivo decifrado", output);
+      fclose(encrypted_file);
+      fclose(decrypted_file);
+      fclose(key_file);
+      return -1;
+    }
+
+    // Atualiza os buffers de historico para o proximo ciclo do loop
+    memcpy(previous_buff, copy_current_buff,
+           next_bytes_r); // O bloco atual puro vira o anterior
+    memcpy(current_buff, next_buff,
+           next_bytes_r); // O proximo bloco lido vira o bloco atual
+    current_bytes_r = next_bytes_r;
+  }
+
+  // PROCESSAMENTO DO ULTIMO BLOCO E TRATAMENTO DE PADDING (PKCS#7)
+
+  // Salva copia do ultimo bloco cifrado puro
+  memcpy(copy_current_buff, current_buff, current_bytes_r);
+
+  // Remove a chave do bloco final -> (C_final XOR K)
+  for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+    current_buff[i] ^= key[i];
+  }
+
+  // Aplica XOR com o bloco cifrado anterior -> ((C_final XOR K) XOR C_anterior)
+  for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+    current_buff[i] ^= previous_buff[i];
+  }
+
+  // O ultimo byte do texto decifrado indica o tamanho do preenchimento
+  // adicionado
+  unsigned char padding_val = current_buff[BLOCK_SIZE - 1];
+
+  // Faz a verificacao para saber se o valor do preenchimento e valido (entre 1
+  // e 16)
+  if (padding_val > 0 && padding_val <= BLOCK_SIZE) {
+    // Calcula a quantidade real de dados textuais puros que devem ser mantidos
+    size_t actual_data_size = BLOCK_SIZE - padding_val;
+
+    // Se houver dados validos no bloco final, grava apenas a quantidade real
+    // descartando o padding
+    if (actual_data_size > 0) {
+      writeen = fwrite(current_buff, 1, actual_data_size, decrypted_file);
+      if (writeen != actual_data_size) {
+        printError("nao foi possivel gravar o arquivo decifrado", output);
+        fclose(encrypted_file);
+        fclose(decrypted_file);
+        fclose(key_file);
+        return -1;
+      }
+    }
+  } else {
+    // Avisa que o arquivo sofreu alteracoes ou a chave utilizada esta incorreta
+    printError("arquivo corrompido ou chave incorreta", input);
+    fclose(encrypted_file);
+    fclose(decrypted_file);
+    fclose(key_file);
+    return -1;
+  }
+
+  // Fecha todos os ponteiros de arquivos abertos com sucesso
+  fclose(encrypted_file);
+  fclose(decrypted_file);
+  fclose(key_file);
 
   return 0;
 }
 
+// Faz a cifragem em bloco utilizando o modo CBC (Cipher Block Chaining)
 int blockCypher(const char *input, const char *output_key, const char *output) {
   FILE *fptr;
   FILE *save_fptr;
   FILE *save_key_fptr;
 
+  // Validacao de arquivos de entrada, saida e chave
   fptr = fopen(input, "rb");
   if (fptr == NULL) {
     printError("nao foi possivel abrir o arquivo", input);
@@ -419,60 +516,174 @@ int blockCypher(const char *input, const char *output_key, const char *output) {
     return -1;
   }
 
-  size_t size_key = BLOCK_SIZE;
+  // Formulas matematicas de referencia para o CBC:
+  // C1 = (P1 XOR IV) XOR K
+  // C2 = (P2 XOR C1) XOR K
+  // C3 = (P3 XOR C2) XOR K
 
-  unsigned char buff[size_key];
-  unsigned char key[size_key];
-  size_t r_bytes, writeen1, writeen2;
+  // Pega constante com tamanho de cada block
+  const size_t size_key = BLOCK_SIZE;
 
+  // Cria variaveis que serao usadas no processo
+  unsigned char
+      IV[size_key]; // Vetor de inicializacao (usado apenas no bloco 1)
+  unsigned char current_buff[size_key]; // Guarda o bloco cifrado anterior
+                                        // (historico para o CBC)
+  unsigned char
+      next_buff[size_key];     // Guarda o texto claro atual (P) lido do arquivo
+  unsigned char key[size_key]; // Guarda a chave simetrica (K)
+  size_t r_bytes, writeen1, writeen2; // Contadores de bytes lidos e gravados
+
+  // Cria a chave (K) e o IV usando '/dev/urandom'
   createKey(key, size_key);
+  createKey(IV, size_key);
 
-  while ((r_bytes = fread(buff, 1, size_key, fptr)) == BLOCK_SIZE) {
+  for (size_t i = 0; i < BLOCK_SIZE; ++i)
+    printf("%hhx ", IV[i]);
 
-    for (size_t i = 0; i < r_bytes; ++i) {
-      buff[i] ^= key[i];
-    }
+  printf("\n");
 
-    writeen1 = fwrite(buff, 1, BLOCK_SIZE, save_fptr);
-    if (writeen1 != r_bytes) {
-      printError("nao foi possivel gravar o arquivo criptografado", output);
-    }
+  // Le o primeirissimo bloco de texto claro (P1)
+  r_bytes = fread(current_buff, 1, BLOCK_SIZE, fptr);
+  if (r_bytes != BLOCK_SIZE) {
+    printError("nao foi possivel ler arquvo de entrada", input);
+    fclose(fptr);
+    fclose(save_fptr);
+    fclose(save_key_fptr);
+    return -1;
   }
 
+  // Inicio da cifragem de C1: Aplica XOR entre o texto claro e o IV -> (P1 XOR
+  // IV)
+  for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+    current_buff[i] ^= IV[i];
+  }
+
+  // Finaliza cifragem de C1: Aplica XOR com a chave -> ((P1 XOR IV) XOR K)
+  for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+    current_buff[i] ^= key[i];
+  }
+
+  // Escreve o IV e o primeiro bloco cifrado (C1) no arquivo de saida
+  writeen2 = fwrite(IV, 1, BLOCK_SIZE, save_fptr);
+  writeen1 = fwrite(current_buff, 1, BLOCK_SIZE, save_fptr);
+  if (writeen2 != BLOCK_SIZE || writeen1 != BLOCK_SIZE) {
+    printError("nao foi possivel escrever arquivo de saida", output);
+    fclose(fptr);
+    fclose(save_fptr);
+    fclose(save_key_fptr);
+    return -1;
+  }
+
+  // LOOP PRINCIPAL: Processa blocos cheios de texto claro (P2, P3, etc.)
+  while ((r_bytes = fread(next_buff, 1, size_key, fptr)) == BLOCK_SIZE) {
+
+    printf("Orig: ");
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+      printf("%hhx ", next_buff[i]);
+    }
+    printf("\nXOR:  ");
+
+    // Inicio da cifragem do bloco atual: Aplica XOR com o bloco cifrado
+    // anterior (C_anterior) Formula: (P_atual XOR C_anterior)
+    for (size_t i = 0; i < r_bytes; ++i) {
+      next_buff[i] ^= current_buff[i];
+      printf("%hhx ", current_buff[i]);
+    }
+    printf("\nKey:  ");
+
+    // Finaliza cifragem do bloco atual: Aplica XOR com a chave (K)
+    // Formula: ((P_atual XOR C_anterior) XOR K)
+    for (size_t i = 0; i < r_bytes; ++i) {
+      next_buff[i] ^= key[i];
+      printf("%hhx ", key[i]);
+    }
+    printf("\nres:  ");
+
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+      printf("%hhx ", next_buff[i]);
+    }
+    printf("\n\n");
+
+    // Salva o bloco cifrado resultante no arquivo de saida
+    writeen1 = fwrite(next_buff, 1, BLOCK_SIZE, save_fptr);
+    if (writeen1 != BLOCK_SIZE) {
+      printError("nao foi possivel gravar o arquivo criptografado", output);
+    }
+
+    // Copia o bloco cifrado atual para 'current_buff' para servir de historico
+    // no proximo ciclo
+    memcpy(current_buff, next_buff, r_bytes);
+  }
+
+  // TRATAMENTO DE PADDING (PKCS#7): Garante que o ultimo bloco tenha 16 bytes
+
+  // CASO A: O arquivo terminou com um bloco incompleto (entre 1 e 15 bytes)
   if (r_bytes > 0) {
+    // Calcula quantos bytes faltam para completar 16
     uint8_t padding_val = BLOCK_SIZE - r_bytes;
 
+    // Preenche o restante do buffer com o valor numerico do proprio padding
     for (size_t i = r_bytes; i < BLOCK_SIZE; ++i) {
-      buff[i] = padding_val;
+      next_buff[i] = padding_val;
     }
 
+    // Aplica o CBC no bloco preenchido: XOR com o bloco cifrado anterior ->
+    // (P_final XOR C_anterior)
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
-      buff[i] ^= key[i];
+      next_buff[i] ^= current_buff[i];
     }
 
-    writeen1 = fwrite(buff, 1, BLOCK_SIZE, save_fptr);
+    // Finaliza cifragem do bloco final: XOR com a chave -> ((P_final XOR
+    // C_anterior) XOR K)
+    for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+      next_buff[i] ^= key[i];
+    }
+
+    // Grava o ultimo bloco cifrado no arquivo de saida
+    writeen1 = fwrite(next_buff, 1, BLOCK_SIZE, save_fptr);
     if (writeen1 != BLOCK_SIZE) {
       printError("nao foi possivel gravar o arquivo criptografado", output);
     }
+
+    // CASO B: O arquivo terminou exatamente em um bloco cheio.
+    // Devemos criar um bloco extra preenchido inteiramente com o valor 16
+    // (0x10).
   } else {
+    // Preenche todo o bloco com o valor 16
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
-      buff[i] = BLOCK_SIZE;
+      next_buff[i] = BLOCK_SIZE;
     }
 
-    for (size_t i = 0; i < r_bytes; ++i) {
-      buff[i] ^= key[i];
+    // Aplica o CBC no bloco extra: XOR com o bloco cifrado anterior -> (P_extra
+    // XOR C_anterior)
+    for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+      next_buff[i] ^= current_buff[i];
     }
 
-    writeen1 = fwrite(buff, 1, BLOCK_SIZE, save_fptr);
+    // Finaliza cifragem do bloco extra: XOR com a chave -> ((P_extra XOR
+    // C_anterior) XOR K)
+    for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+      next_buff[i] ^= key[i];
+    }
+
+    // Salva o bloco extra cifrado no arquivo de saida
+    writeen1 = fwrite(next_buff, 1, BLOCK_SIZE, save_fptr);
     if (writeen1 != BLOCK_SIZE) {
       printError("nao foi possivel gravar o arquivo criptografado", output);
     }
   }
 
+  // Salva a chave secreta (K) gerada pelo sistema no arquivo de chaves separado
   writeen2 = fwrite(key, 1, size_key, save_key_fptr);
   if (writeen2 != size_key) {
     printError("nao foi possivel gravar o arquivo de chave", output_key);
   }
+
+  // Fecha todos os ponteiros de arquivos abertos
+  fclose(fptr);
+  fclose(save_fptr);
+  fclose(save_key_fptr);
 
   return 0;
 }

@@ -63,6 +63,8 @@ int main(int argc, char *argv[]) {
 
 
   if (statusCode < 0) {
+      printf("Erro aqui\n");
+
     return 1;
   }
 

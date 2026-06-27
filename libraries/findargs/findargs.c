@@ -147,11 +147,11 @@ int tryGetArgValue(const char *flag, FindArgs *args) {
 
       // Verifica se existe valor apos a flag
       if (i + 1 >= args->arg_count) {
-        return -1;
+        return -2;
       }
 
       if (!isFlag(args->arg_vetors[i + 1], *args)) {
-        return -1;
+        return -2;
       }
 
       return i + 1;
